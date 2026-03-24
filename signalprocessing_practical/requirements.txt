@@ -1,8 +1,0 @@
-numpy
-scipy
-matplotlib
-speechrecognition
-pyaudio
-soundfile
-scikit-image
-PyWavelets
