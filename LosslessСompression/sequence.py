@@ -233,9 +233,8 @@ results = []
 
 original_sequences = [original_sequence_1, original_sequence_2, original_sequence_3, original_sequence_4, original_sequence_5, original_sequence_6, original_sequence_7, original_sequence_8]
 with open("sequence.txt", "w", encoding="utf-8") as f:
-    for i, seq in enumerate(original_sequences, start=1):
-        f.write("Послідовність №" + str(i) + "\n")
-        f.write(seq + "\n\n")
+    f.write(str(original_sequences))
+
 
 with open("results_sequence.txt", "a", encoding="utf-8") as file:
 
