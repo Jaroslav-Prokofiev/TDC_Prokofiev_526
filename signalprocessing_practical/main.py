@@ -11,7 +11,7 @@ import glob
 SAMPLE_RATE = 44100
 NAME_ORIGINAL_WAV = "./Sounds/Sound_44100[Hz]_2[byte].wav"
 
-"""def wavelet_denoiser(signal, level=5, mode='hard', wavelet='db4'):
+def wavelet_denoiser(signal, level=5, mode='hard', wavelet='db4'):
     coeffs = pywt.wavedec(signal, wavelet, level=level)
     sigma = np.median(np.abs(coeffs[-1])) / 0.6745
     threshold = sigma * np.sqrt(2 * np.log(signal.size))
@@ -74,20 +74,330 @@ def wavelet_shifted_filter():
     plt.legend()
     plt.tight_layout()
     plt.savefig("./Sounds/gaussian.png")
-    plt.show()"""
+    plt.show()
 
-def to_scientific_pretty(x, precision=2):
-    superscripts = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
-    mantissa, exponent = f"{x:.{precision}e}".split('e')
-    mantissa = mantissa.rstrip('0').rstrip('.')
-    return f"{mantissa} · 10{str(int(exponent)).translate(superscripts)}"
+def filtration_efficiency():
+    data, fs_original = sf.read(NAME_ORIGINAL_WAV)
 
-NAME_RESAMPLED_WAV = "./Sounds/Sound_4000[Hz]_2[byte].wav"
+    signal_power = np.mean(data ** 2)
+    max_shifts = 5
+    mse_wt_mean = []
+    mse_wt_list = []
+    mse_g_mean = []
+    mse_g_list = []
+    mae_wt_mean = []
+    mae_wt_list = []
+    mae_g_mean = []
+    mae_g_list = []
+    rmse_wt_mean = []
+    rmse_wt_list = []
+    rmse_g_mean = []
+    rmse_g_list = []
+    r2_wt_mean = []
+    r2_wt_list = []
+    r2_g_mean = []
+    r2_g_list = []
+    d_wt_mean = []
+    d_wt_list = []
+    d_g_mean = []
+    d_g_list = []
+    snr_values = []
+
+    for SNR_dB in np.arange(-10, 21, 0.5):
+        mse_wt = []
+        mse_g = []
+        mae_wt = []
+        mae_g = []
+        rmse_wt = []
+        rmse_g = []
+        r2_wt = []
+        r2_g = []
+        d_wt = []
+        d_g = []
+
+        for i in range(0, 10):
+            noise_power = signal_power / (10 ** (SNR_dB / 10))
+
+            noise = np.random.normal(
+                0,
+                np.sqrt(noise_power),
+                size=data.shape
+            )
+            noisy_signal = data + noise
+            sig_filtered_wavelet = cycle_spin(
+                noisy_signal,
+                func=wavelet_denoiser,
+                max_shifts=max_shifts,
+                shift_steps=5,
+                num_workers=1
+            )
+
+            kernel = gaussian_kernel(size=11, sigma=2)
+            sig_filtered_gaussian = convolve(
+                noisy_signal,
+                kernel,
+                mode='same'
+            )
+
+            mse_wavelet = mean_squared_error(
+                data,
+                sig_filtered_wavelet
+            )
+
+            mse_gaussian = mean_squared_error(
+                data,
+                sig_filtered_gaussian
+            )
+
+            mae_wavelet = mean_absolute_error(data, sig_filtered_wavelet)
+            mae_gaussian = mean_absolute_error(data, sig_filtered_gaussian)
+
+            rmse_wavelet = np.sqrt(mse_wavelet)
+            rmse_gaussian = np.sqrt(mse_gaussian)
+
+            r2_wavelet = r2_score(data, sig_filtered_wavelet)
+            r2_gaussian = r2_score(data, sig_filtered_gaussian)
+
+            d_wavelet = np.var(data - sig_filtered_wavelet)
+            d_gaussian = np.var(data - sig_filtered_gaussian)
+
+            mse_wt.append(mse_wavelet)
+            mse_g.append(mse_gaussian)
+            mae_wt.append(mae_wavelet)
+            mae_g.append(mae_gaussian)
+            rmse_wt.append(rmse_wavelet)
+            rmse_g.append(rmse_gaussian)
+            r2_wt.append(r2_wavelet)
+            r2_g.append(r2_gaussian)
+            d_wt.append(d_wavelet)
+            d_g.append(d_gaussian)
+
+        mse_wt_mean.append(np.mean(mse_wt))
+        mse_wt_list.append(list(mse_wt))
+        mse_g_mean.append(np.mean(mse_g))
+        mse_g_list.append(list(mse_g))
+
+        mae_wt_mean.append(np.mean(mae_wt))
+        mae_wt_list.append(list(mae_wt))
+        mae_g_mean.append(np.mean(mae_g))
+        mae_g_list.append(list(mae_g))
+
+        rmse_wt_mean.append(np.mean(rmse_wt))
+        rmse_wt_list.append(list(rmse_wt))
+        rmse_g_mean.append(np.mean(rmse_g))
+        rmse_g_list.append(list(rmse_g))
+
+        r2_wt_mean.append(np.mean(r2_wt))
+        r2_wt_list.append(list(r2_wt))
+        r2_g_mean.append(np.mean(r2_g))
+        r2_g_list.append(list(r2_g))
+
+        d_wt_mean.append(np.mean(d_wt))
+        d_wt_list.append(list(d_wt))
+        d_g_mean.append(np.mean(d_g))
+        d_g_list.append(list(d_g))
+        snr_values.append(SNR_dB)
+
+    snr_scatter_wt = []
+    mse_scatter_wt = []
+    snr_scatter_g = []
+    mse_scatter_g = []
+
+    for snr, mse_list in zip(snr_values, mse_wt_list):
+        snr_scatter_wt.extend([snr] * len(mse_list))
+        mse_scatter_wt.extend(mse_list)
+
+    for snr, mse_list in zip(snr_values, mse_g_list):
+        snr_scatter_g.extend([snr] * len(mse_list))
+        mse_scatter_g.extend(mse_list)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(snr_scatter_wt, mse_scatter_wt, color='red', alpha=0.05, label="Окремі значення MSE")
+    axes[0].plot(snr_values, mse_wt_mean, linewidth=2, label="Середнє MSE WT")
+    axes[0].scatter(snr_scatter_g, mse_scatter_g, color='green', alpha=0.05, label="Окремі значення MSE")
+    axes[0].plot(snr_values, mse_g_mean, linewidth=2, label="Середнє MSE GF")
+    axes[0].set_xticks(np.arange(-10, 21, 2))
+    axes[0].set_xlabel("SNR (дБ)")
+    axes[0].set_ylabel("MSE")
+    axes[0].grid(True)
+    axes[0].legend()
+    axes[0].set_title("Лінійний масштаб")
+    axes[1].scatter(snr_scatter_wt, mse_scatter_wt, color='red', alpha=0.05, label="Окремі значення MSE")
+    axes[1].plot(snr_values, mse_wt_mean, linewidth=2, label="Середнє MSE WT")
+    axes[1].scatter(snr_scatter_g, mse_scatter_g, color='green', alpha=0.05, label="Окремі значення MSE")
+    axes[1].plot(snr_values, mse_g_mean, linewidth=2, label="Середнє MSE GF")
+    axes[1].set_xticks(np.arange(-10, 21, 1))
+    axes[1].set_xlabel("SNR (дБ)")
+    axes[1].set_ylabel("MSE")
+    axes[1].grid(True)
+    axes[1].set_yscale('log')
+    axes[1].legend()
+    axes[1].set_title("Логарифмічний масштаб")
+    plt.tight_layout()
+    plt.savefig("MSE-SNR.png", dpi=600)
+    plt.show()
+
+    snr_scatter_wt_mae = []
+    mae_scatter_wt = []
+    snr_scatter_g_mae = []
+    mae_scatter_g = []
+
+    for snr, mae_list in zip(snr_values, mae_wt_list):
+        snr_scatter_wt_mae.extend([snr] * len(mae_list))
+        mae_scatter_wt.extend(mae_list)
+
+    for snr, mae_list in zip(snr_values, mae_g_list):
+        snr_scatter_g_mae.extend([snr] * len(mae_list))
+        mae_scatter_g.extend(mae_list)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(snr_scatter_wt_mae, mae_scatter_wt, color='red', alpha=0.05, label="Окремі значення MAE")
+    axes[0].plot(snr_values, mae_wt_mean, linewidth=2, label="Середнє MAE WT")
+    axes[0].scatter(snr_scatter_g_mae, mae_scatter_g, color='green', alpha=0.05, label="Окремі значення MAE")
+    axes[0].plot(snr_values, mae_g_mean, linewidth=2, label="Середнє MAE GF")
+    axes[0].set_xticks(np.arange(-10, 21, 2))
+    axes[0].set_xlabel("SNR (дБ)")
+    axes[0].set_ylabel("MAE")
+    axes[0].grid(True)
+    axes[0].legend()
+    axes[0].set_title("Лінійний масштаб")
+    axes[1].scatter(snr_scatter_wt_mae, mae_scatter_wt, color='red', alpha=0.05, label="Окремі значення MAE")
+    axes[1].plot(snr_values, mae_wt_mean, linewidth=2, label="Середнє MAE WT")
+    axes[1].scatter(snr_scatter_g_mae, mae_scatter_g, color='green', alpha=0.05, label="Окремі значення MAE")
+    axes[1].plot(snr_values, mae_g_mean, linewidth=2, label="Середнє MAE GF")
+    axes[1].set_xticks(np.arange(-10, 21, 1))
+    axes[1].set_xlabel("SNR (дБ)")
+    axes[1].set_ylabel("MAE")
+    axes[1].grid(True)
+    axes[1].set_yscale('log')
+    axes[1].legend()
+    axes[1].set_title("Логарифмічний масштаб")
+    plt.tight_layout()
+    plt.savefig("MAE-SNR.png", dpi=600)
+    plt.show()
+
+    snr_scatter_wt_rmse = []
+    rmse_scatter_wt = []
+    snr_scatter_g_rmse = []
+    rmse_scatter_g = []
+
+    for snr, rmse_list in zip(snr_values, rmse_wt_list):
+        snr_scatter_wt_rmse.extend([snr] * len(rmse_list))
+        rmse_scatter_wt.extend(rmse_list)
+
+    for snr, rmse_list in zip(snr_values, rmse_g_list):
+        snr_scatter_g_rmse.extend([snr] * len(rmse_list))
+        rmse_scatter_g.extend(rmse_list)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(snr_scatter_wt_rmse, rmse_scatter_wt, color='red', alpha=0.05, label="Окремі значення RMSE")
+    axes[0].plot(snr_values, rmse_wt_mean, linewidth=2, label="Середнє RMSE WT")
+    axes[0].scatter(snr_scatter_g_rmse, rmse_scatter_g, color='green', alpha=0.05, label="Окремі значення RMSE")
+    axes[0].plot(snr_values, rmse_g_mean, linewidth=2, label="Середнє RMSE GF")
+    axes[0].set_xticks(np.arange(-10, 21, 2))
+    axes[0].set_xlabel("SNR (дБ)")
+    axes[0].set_ylabel("RMSE")
+    axes[0].grid(True)
+    axes[0].legend()
+    axes[0].set_title("Лінійний масштаб")
+    axes[1].scatter(snr_scatter_wt_rmse, rmse_scatter_wt, color='red', alpha=0.05, label="Окремі значення RMSE")
+    axes[1].plot(snr_values, rmse_wt_mean, linewidth=2, label="Середнє RMSE WT")
+    axes[1].scatter(snr_scatter_g_rmse, rmse_scatter_g, color='green', alpha=0.05, label="Окремі значення RMSE")
+    axes[1].plot(snr_values, rmse_g_mean, linewidth=2, label="Середнє RMSE GF")
+    axes[1].set_xticks(np.arange(-10, 21, 1))
+    axes[1].set_xlabel("SNR (дБ)")
+    axes[1].set_ylabel("RMSE")
+    axes[1].grid(True)
+    axes[1].set_yscale('log')
+    axes[1].legend()
+    axes[1].set_title("Логарифмічний масштаб")
+    plt.tight_layout()
+    plt.savefig("RMSE-SNR.png", dpi=600)
+    plt.show()
+
+    snr_scatter_wt_r2 = []
+    r2_scatter_wt = []
+    snr_scatter_g_r2 = []
+    r2_scatter_g = []
+
+    for snr, r2_list in zip(snr_values, r2_wt_list):
+        snr_scatter_wt_r2.extend([snr] * len(r2_list))
+        r2_scatter_wt.extend(r2_list)
+
+    for snr, r2_list in zip(snr_values, r2_g_list):
+        snr_scatter_g_r2.extend([snr] * len(r2_list))
+        r2_scatter_g.extend(r2_list)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(snr_scatter_wt_r2, r2_scatter_wt, color='red', alpha=0.05, label="Окремі значення R2")
+    axes[0].plot(snr_values, r2_wt_mean, linewidth=2, label="Середнє R2 WT")
+    axes[0].scatter(snr_scatter_g_r2, r2_scatter_g, color='green', alpha=0.05, label="Окремі значення R2")
+    axes[0].plot(snr_values, r2_g_mean, linewidth=2, label="Середнє R2 GF")
+    axes[0].set_xticks(np.arange(-10, 21, 2))
+    axes[0].set_xlabel("SNR (дБ)")
+    axes[0].set_ylabel("R2")
+    axes[0].grid(True)
+    axes[0].legend()
+    axes[0].set_title("Лінійний масштаб")
+    axes[1].scatter(snr_scatter_wt_r2, r2_scatter_wt, color='red', alpha=0.05, label="Окремі значення R2")
+    axes[1].plot(snr_values, r2_wt_mean, linewidth=2, label="Середнє R2 WT")
+    axes[1].scatter(snr_scatter_g_r2, r2_scatter_g, color='green', alpha=0.05, label="Окремі значення R2")
+    axes[1].plot(snr_values, r2_g_mean, linewidth=2, label="Середнє R2 GF")
+    axes[1].set_xticks(np.arange(-10, 21, 1))
+    axes[1].set_xlabel("SNR (дБ)")
+    axes[1].set_ylabel("R2")
+    axes[1].grid(True)
+    axes[1].legend()
+    axes[1].set_title("Логарифмічний масштаб")
+    plt.tight_layout()
+    plt.savefig("R2-SNR.png", dpi=600)
+    plt.show()
+
+    snr_scatter_wt_d = []
+    d_scatter_wt = []
+    snr_scatter_g_d = []
+    d_scatter_g = []
+
+    for snr, d_list in zip(snr_values, d_wt_list):
+        snr_scatter_wt_d.extend([snr] * len(d_list))
+        d_scatter_wt.extend(d_list)
+
+    for snr, d_list in zip(snr_values, d_g_list):
+        snr_scatter_g_d.extend([snr] * len(d_list))
+        d_scatter_g.extend(d_list)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    axes[0].scatter(snr_scatter_wt_d, d_scatter_wt, color='red', alpha=0.05, label="Окремі значення D")
+    axes[0].plot(snr_values, d_wt_mean, linewidth=2, label="Середнє D WT")
+    axes[0].scatter(snr_scatter_g_d, d_scatter_g, color='green', alpha=0.05, label="Окремі значення D")
+    axes[0].plot(snr_values, d_g_mean, linewidth=2, label="Середнє D GF")
+    axes[0].set_xticks(np.arange(-10, 21, 2))
+    axes[0].set_xlabel("SNR (дБ)")
+    axes[0].set_ylabel("D (дисперсія похибки)")
+    axes[0].grid(True)
+    axes[0].legend()
+    axes[0].set_title("Лінійний масштаб")
+    axes[1].scatter(snr_scatter_wt_d, d_scatter_wt, color='red', alpha=0.05, label="Окремі значення D")
+    axes[1].plot(snr_values, d_wt_mean, linewidth=2, label="Середнє D WT")
+    axes[1].scatter(snr_scatter_g_d, d_scatter_g, color='green', alpha=0.05, label="Окремі значення D")
+    axes[1].plot(snr_values, d_g_mean, linewidth=2, label="Середнє D GF")
+    axes[1].set_xticks(np.arange(-10, 21, 1))
+    axes[1].set_xlabel("SNR (дБ)")
+    axes[1].set_ylabel("D (дисперсія похибки)")
+    axes[1].grid(True)
+    axes[1].set_yscale('log')
+    axes[1].legend()
+    axes[1].set_title("Логарифмічний масштаб")
+    plt.tight_layout()
+    plt.savefig("D-SNR.png", dpi=600)
+    plt.show()
+
 
 if __name__ == "__main__":
-    # wavelet_shifted_filter()
+    filtration_efficiency()
 
-    results = []
+    # wavelet_shifted_filter()
+    '''results = []
     row = []
     headers = ['MSE', 'MAE', 'RMSE', 'R2', 'D']
 
@@ -142,4 +452,4 @@ if __name__ == "__main__":
 
     ax.axis('off')
     plt.savefig("results.png", dpi=600)
-    plt.show()
+    plt.show()'''
